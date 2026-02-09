@@ -86,9 +86,17 @@ class LinkedInCrawler:
         data['licenses'] = self.extract_licenses()
         print(f"→ Found {len(data['licenses'])} licenses & certifications")
         
-        print("\n[10/10] Extracting courses...")
+        print("\n[10/11] Extracting courses...")
         data['courses'] = self.extract_courses()
         print(f"→ Found {len(data['courses'])} courses")
+        
+        print("\n[11/12] Extracting volunteering...")
+        data['volunteering'] = self.extract_volunteering()
+        print(f"→ Found {len(data['volunteering'])} volunteering experiences")
+        
+        print("\n[12/12] Extracting test scores...")
+        data['test_scores'] = self.extract_test_scores()
+        print(f"→ Found {len(data['test_scores'])} test scores")
         
         print("\n" + "="*60)
         print("PROFILE EXTRACTION COMPLETE!")
@@ -1443,6 +1451,361 @@ class LinkedInCrawler:
             print(f"Error: {e}")
         
         return courses
+    
+    def extract_volunteering(self):
+        """Extract volunteering section with show all flow"""
+        volunteering = []
+        try:
+            print("Looking for volunteering section...")
+            
+            vol_section = None
+            selectors = [
+                "//section[contains(@id, 'volunteering')]",
+                "//section[.//div[@id='volunteering-experience']]",
+                "//section[.//div[@id='volunteering_experience']]",
+                "//section[.//h2[contains(text(), 'Volunteering')]]",
+                "//section[.//span[contains(text(), 'Volunteer experience')]]",
+                "//div[@id='volunteering-experience-section']",
+            ]
+            
+            for selector in selectors:
+                try:
+                    vol_section = self.wait.until(
+                        EC.presence_of_element_located((By.XPATH, selector))
+                    )
+                    print("✓ Found section")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not vol_section:
+                print("⚠ Volunteering section not found")
+                return volunteering
+            
+            # Click "Show all"
+            clicked = click_show_all(self.driver, vol_section)
+            
+            if clicked:
+                items = extract_items_from_detail_page(self.driver)
+                print(f"Found {len(items)} volunteering items")
+                
+                for idx, item in enumerate(items):
+                    try:
+                        text = item.text.strip()
+                        if not text or len(text) < 10:
+                            continue
+                        
+                        # Remove consecutive duplicates
+                        all_lines = [l.strip() for l in text.split('\n') if l.strip()]
+                        lines = []
+                        prev = None
+                        for line in all_lines:
+                            if line != prev:
+                                lines.append(line)
+                                prev = line
+                        
+                        print(f"\n  === Volunteering Item {idx+1}/{len(items)} ===")
+                        print(f"  Total lines: {len(lines)}")
+                        for i, line in enumerate(lines[:10]):
+                            print(f"    [{i}] {line[:80]}")
+                        
+                        # Structure after deduplication:
+                        # [0] Role/Title (e.g., "YLI by McKinsey & Co. Awardee: Wave 14")
+                        # [1] Organization (e.g., "Young Leaders for Indonesia Foundation")
+                        # [2] Duration (e.g., "May 2022 - Dec 2022 · 8 mos")
+                        # [3] Duration duplicate (e.g., "May 2022 to Dec 2022 · 8 mos")
+                        # [4] Cause/Category (e.g., "Education")
+                        # [5+] Description (optional)
+                        
+                        if len(lines) >= 3:
+                            role = lines[0]
+                            organization = lines[1]
+                            duration = lines[2]
+                            cause = ""
+                            description = ""
+                            
+                            # Line[3] is duplicate duration, skip it
+                            # Line[4] is usually cause (short, single word or phrase)
+                            if len(lines) > 4:
+                                potential_cause = lines[4]
+                                # Cause is usually short (< 50 chars) and doesn't have dates or long descriptions
+                                if len(potential_cause) < 50 and '-' not in potential_cause and '·' not in potential_cause:
+                                    cause = potential_cause
+                                    print(f"  → Cause: {cause}")
+                            
+                            # Description is after cause (if exists)
+                            desc_start_idx = 5 if cause else 4
+                            if len(lines) > desc_start_idx:
+                                # Join remaining lines as description
+                                desc_lines = []
+                                for line in lines[desc_start_idx:]:
+                                    # Skip "Skills:" and skill names
+                                    if line.startswith('Skills:') or line == 'Skills':
+                                        break
+                                    # Skip if it's "Associated with"
+                                    if line.startswith('Associated with'):
+                                        break
+                                    desc_lines.append(line)
+                                
+                                if desc_lines:
+                                    description = ' '.join(desc_lines)
+                                    print(f"  → Description: {description[:60]}...")
+                            
+                            vol_data = {
+                                'role': role,
+                                'organization': organization,
+                                'duration': duration,
+                                'cause': cause,
+                                'description': description
+                            }
+                            volunteering.append(vol_data)
+                            print(f"  ✓ ADDED {len(volunteering)}. {vol_data['role']}")
+                        else:
+                            print(f"  → SKIP: Not enough lines ({len(lines)})")
+                    except Exception as e:
+                        print(f"  Error parsing volunteering item {idx+1}: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        continue
+                
+                click_back_arrow(self.driver)
+            else:
+                # No show all, extract from main page
+                print("  Extracting from main page...")
+                items = vol_section.find_elements(By.XPATH, ".//ul/li")
+                print(f"  Found {len(items)} items on main page")
+                
+                for idx, item in enumerate(items):
+                    try:
+                        text = item.text.strip()
+                        if not text or len(text) < 10:
+                            continue
+                        
+                        all_lines = [l.strip() for l in text.split('\n') if l.strip()]
+                        lines = []
+                        prev = None
+                        for line in all_lines:
+                            if line != prev:
+                                lines.append(line)
+                                prev = line
+                        
+                        print(f"\n  === Item {idx+1}/{len(items)} ===")
+                        print(f"  Lines: {len(lines)}")
+                        for i, line in enumerate(lines[:8]):
+                            print(f"    [{i}] {line[:80]}")
+                        
+                        if len(lines) >= 3:
+                            role = lines[0]
+                            organization = lines[1]
+                            duration = lines[2]
+                            cause = ""
+                            description = ""
+                            
+                            if len(lines) > 4:
+                                potential_cause = lines[4]
+                                if len(potential_cause) < 50 and '-' not in potential_cause and '·' not in potential_cause:
+                                    cause = potential_cause
+                            
+                            desc_start_idx = 5 if cause else 4
+                            if len(lines) > desc_start_idx:
+                                desc_lines = []
+                                for line in lines[desc_start_idx:]:
+                                    if line.startswith('Skills:') or line == 'Skills':
+                                        break
+                                    if line.startswith('Associated with'):
+                                        break
+                                    desc_lines.append(line)
+                                
+                                if desc_lines:
+                                    description = ' '.join(desc_lines)
+                            
+                            vol_data = {
+                                'role': role,
+                                'organization': organization,
+                                'duration': duration,
+                                'cause': cause,
+                                'description': description
+                            }
+                            volunteering.append(vol_data)
+                            print(f"  ✓ ADDED {len(volunteering)}. {vol_data['role']}")
+                        else:
+                            print(f"  → SKIP: Not enough lines")
+                    except Exception as e:
+                        print(f"  Error: {e}")
+                        continue
+        
+        except Exception as e:
+            print(f"Error extracting volunteering: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        return volunteering
+    
+    def extract_test_scores(self):
+        """Extract test scores section with show all flow"""
+        test_scores = []
+        try:
+            print("Looking for test scores section...")
+            
+            test_section = None
+            selectors = [
+                "//section[contains(@id, 'test-scores')]",
+                "//section[contains(@id, 'test_scores')]",
+                "//section[.//div[@id='test-scores']]",
+                "//section[.//h2[contains(text(), 'Test scores')]]",
+                "//section[.//h2[contains(text(), 'Test Scores')]]",
+                "//section[.//span[contains(text(), 'Test scores')]]",
+            ]
+            
+            for selector in selectors:
+                try:
+                    test_section = self.wait.until(
+                        EC.presence_of_element_located((By.XPATH, selector))
+                    )
+                    print("✓ Found section")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not test_section:
+                print("⚠ Test scores section not found")
+                return test_scores
+            
+            # Click "Show all"
+            clicked = click_show_all(self.driver, test_section)
+            
+            if clicked:
+                items = extract_items_from_detail_page(self.driver)
+                
+                for item in items:
+                    try:
+                        text = item.text.strip()
+                        if not text or len(text) < 5:
+                            continue
+                        
+                        # Remove consecutive duplicates
+                        all_lines = [l.strip() for l in text.split('\n') if l.strip()]
+                        lines = []
+                        prev = None
+                        for line in all_lines:
+                            if line != prev:
+                                lines.append(line)
+                                prev = line
+                        
+                        print(f"  Test score item lines: {len(lines)}")
+                        for i, line in enumerate(lines[:6]):
+                            print(f"    [{i}] {line[:80]}")
+                        
+                        # Structure after deduplication:
+                        # [0] Test Name (e.g., "TOEFL iBT")
+                        # [1] Score · Duration (e.g., "110 · Jan 2023 - Jan 2025")
+                        # [2] Score · Duration duplicate (e.g., "110 · Jan 2023 to Jan 2025")
+                        # [3] Description (optional)
+                        
+                        if len(lines) >= 2:
+                            name = lines[0]
+                            score = ""
+                            duration = ""
+                            description = ""
+                            
+                            # Parse line[1]: "Score · Duration"
+                            score_duration_line = lines[1]
+                            
+                            # Split by middle dot (·)
+                            if '·' in score_duration_line:
+                                parts = score_duration_line.split('·')
+                                score = parts[0].strip()
+                                duration = parts[1].strip() if len(parts) > 1 else ""
+                            else:
+                                # No middle dot, whole line is score
+                                score = score_duration_line
+                            
+                            # Line[2] is duplicate, skip it
+                            # Line[3+] is description (optional)
+                            if len(lines) > 3:
+                                desc_lines = []
+                                for line in lines[3:]:
+                                    # Skip if it's "Associated with" or other metadata
+                                    if line.startswith('Associated with'):
+                                        break
+                                    desc_lines.append(line)
+                                
+                                if desc_lines:
+                                    description = ' '.join(desc_lines)
+                            
+                            test_data = {
+                                'name': name,
+                                'score': score,
+                                'duration': duration,
+                                'description': description
+                            }
+                            test_scores.append(test_data)
+                            print(f"  ✓ {len(test_scores)}. {test_data['name']} - {test_data['score']}")
+                    except Exception as e:
+                        print(f"  Error parsing test score: {e}")
+                        continue
+                
+                click_back_arrow(self.driver)
+            else:
+                # No show all, extract from main page
+                print("  Extracting from main page...")
+                items = test_section.find_elements(By.XPATH, ".//ul/li")
+                
+                for item in items:
+                    try:
+                        text = item.text.strip()
+                        if not text or len(text) < 5:
+                            continue
+                        
+                        all_lines = [l.strip() for l in text.split('\n') if l.strip()]
+                        lines = []
+                        prev = None
+                        for line in all_lines:
+                            if line != prev:
+                                lines.append(line)
+                                prev = line
+                        
+                        if len(lines) >= 2:
+                            name = lines[0]
+                            score = ""
+                            duration = ""
+                            description = ""
+                            
+                            score_duration_line = lines[1]
+                            
+                            if '·' in score_duration_line:
+                                parts = score_duration_line.split('·')
+                                score = parts[0].strip()
+                                duration = parts[1].strip() if len(parts) > 1 else ""
+                            else:
+                                score = score_duration_line
+                            
+                            if len(lines) > 3:
+                                desc_lines = []
+                                for line in lines[3:]:
+                                    if line.startswith('Associated with'):
+                                        break
+                                    desc_lines.append(line)
+                                
+                                if desc_lines:
+                                    description = ' '.join(desc_lines)
+                            
+                            test_data = {
+                                'name': name,
+                                'score': score,
+                                'duration': duration,
+                                'description': description
+                            }
+                            test_scores.append(test_data)
+                            print(f"  ✓ {len(test_scores)}. {test_data['name']}")
+                    except Exception as e:
+                        print(f"  Error: {e}")
+                        continue
+        
+        except Exception as e:
+            print(f"Error: {e}")
+        
+        return test_scores
     
     def close(self):
         """Close the browser"""

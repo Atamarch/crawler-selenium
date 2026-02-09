@@ -1,88 +1,80 @@
-# LinkedIn Profile Crawler
+# LinkedIn Profile Scraper
 
-Simple Selenium-based LinkedIn profile scraper that extracts profile data into JSON format.
-
-## Features
-
-- ✅ Targeted section expansion (no "go back" needed)
-- ✅ Anti-detection measures
-- ✅ Human-like scrolling and delays
-- ✅ Handles LinkedIn's dynamic hash classes
-- ✅ Lazy loading support for skills
-- ✅ Clean JSON output
+Scraper LinkedIn profiles dengan RabbitMQ queue system.
 
 ## Setup
 
-1. Install dependencies:
+### 1. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Make sure Chrome and ChromeDriver are installed and ChromeDriver is in your PATH
-
-3. Configure credentials in `.env`:
+### 2. Setup .env
+```bash
+cp .env.example .env
 ```
-LINKEDIN_EMAIL=your-email@example.com
-LINKEDIN_PASSWORD=your-password
+Edit `.env` dan isi credentials LinkedIn lu.
+
+### 3. Start RabbitMQ
+```bash
+docker-compose up -d
 ```
 
 ## Usage
 
-Run the scraper:
+### Simple Mode (Tanpa RabbitMQ)
 ```bash
 python main.py
 ```
+Input URLs, tunggu selesai.
 
-Enter the LinkedIn profile URL when prompted.
+### RabbitMQ Mode (Recommended untuk banyak URLs)
 
-## Output Format
+**Terminal 1 - Start Workers:**
+```bash
+python consumer_multi.py
+```
+Input jumlah workers (default 3), workers jalan terus otomatis.
+
+**Terminal 2 - Add URLs:**
+```bash
+python producer.py
+```
+Input URLs kapan aja, workers langsung process.
+
+## Monitoring
+
+RabbitMQ Management UI: http://localhost:15672
+- Login: `guest` / `guest`
+
+## Output
+
+JSON files di folder: `data/output/`
+
+## Data Structure
 
 ```json
 {
-  "name": "John Doe",
-  "about": "Full about text...",
-  "experiences": [
-    {
-      "title": "Software Engineer",
-      "company": "Tech Corp",
-      "duration": "Jan 2020 - Present",
-      "description": "..."
-    }
-  ],
-  "education": [
-    {
-      "school": "University Name",
-      "degree": "Bachelor of Science",
-      "duration": "2016 - 2020"
-    }
-  ],
-  "skills": ["Python", "JavaScript", "..."],
-  "languages": ["English - Native", "Indonesian - Professional"]
+  "profile_url": "...",
+  "name": "...",
+  "about": "...",
+  "experiences": [...],
+  "education": [...],
+  "skills": [...],
+  "projects": [...],
+  "honors": [...],
+  "languages": [...],
+  "licenses": [...],
+  "courses": [...],
+  "volunteering": [...],
+  "test_scores": [...]
 }
 ```
 
-Output files are saved to `data/output/` directory.
+## Files
 
-## How It Works
-
-1. **Login** - Authenticates with LinkedIn
-2. **Navigate** - Goes to target profile
-3. **Extract per section**:
-   - Scroll to section
-   - Click "show more" within that section only
-   - Extract data immediately
-   - Move to next section
-4. **Save** - Outputs JSON file with timestamp
-
-## Anti-Detection Features
-
-- Random delays between actions
-- Smooth scrolling behavior
-- Disabled automation flags
-- Human-like interaction patterns
-
-## Notes
-
-- LinkedIn may rate limit or block automated access
-- Use responsibly and respect LinkedIn's Terms of Service
-- Consider adding delays between multiple profile scrapes
+- `main.py` - Simple mode (queue biasa)
+- `producer.py` - Add URLs ke RabbitMQ
+- `consumer_multi.py` - Process URLs dengan multiple workers
+- `crawler.py` - Main scraper logic
+- `helper/` - Helper functions

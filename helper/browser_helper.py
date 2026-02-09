@@ -2,6 +2,7 @@
 import time
 import random
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.support.ui import WebDriverWait
 
 
@@ -13,7 +14,24 @@ def create_driver():
     options.add_experimental_option('useAutomationExtension', False)
     options.add_argument('--start-minimized')
     
-    driver = webdriver.Chrome(options=options)
+    # Selenium 4.6+ auto-downloads chromedriver
+    # No need for webdriver-manager if using Selenium 4.6+
+    try:
+        driver = webdriver.Chrome(options=options)
+    except Exception as e:
+        print(f"⚠ Failed to create Chrome driver: {e}")
+        print("  Trying with webdriver-manager...")
+        
+        # Fallback: use webdriver-manager
+        try:
+            from webdriver_manager.chrome import ChromeDriverManager
+            service = ChromeService(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=options)
+        except ImportError:
+            print("✗ webdriver-manager not installed!")
+            print("  Install: pip install webdriver-manager")
+            raise
+    
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     
     return driver
